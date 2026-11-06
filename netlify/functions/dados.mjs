@@ -9,7 +9,7 @@ import { inflateRawSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 
 const DRIVE_FILE_ID = '1QQJNc1gmoy3UxI2t9IKv1bD92ud0dfow';
-const CACHE_MS = 2_000;
+const CACHE_MS = 60_000;
 let cache = null;
 let cacheEm = 0;
 let cacheHash = null;
