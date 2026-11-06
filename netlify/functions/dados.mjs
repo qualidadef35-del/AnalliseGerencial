@@ -9,10 +9,11 @@ import { inflateRawSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 
 const DRIVE_FILE_ID = '1QQJNc1gmoy3UxI2t9IKv1bD92ud0dfow';
-const CACHE_MS = 60_000;
+const CACHE_MS = 300_000;
 let cache = null;
 let cacheEm = 0;
 let cacheHash = null;
+let carregamento = null;
 
 function entradaZip(arquivo, nome) {
   const b = Buffer.isBuffer(arquivo) ? arquivo : Buffer.from(arquivo);
@@ -213,17 +214,33 @@ async function baixarExcel() {
   throw new Error('Não foi possível baixar o Excel do Google Drive. ' + erros.slice(0,3).join(' | '));
 }
 
-export default async function handler(request) {
-  if (request.method !== 'GET') return new Response(JSON.stringify({error:'Método não permitido.'}), {status:405,headers:{'Content-Type':'application/json; charset=utf-8'}});
-  try {
-    if (!cache || Date.now() - cacheEm > CACHE_MS) {
+async function carregarSeNecessario() {
+  if (cache && Date.now() - cacheEm <= CACHE_MS) return;
+  // Evita baixar o mesmo Excel varias vezes em chamadas simultaneas.
+  if (!carregamento) {
+    carregamento = (async () => {
       const arquivo = await baixarExcel();
       const novos = parseWorkbook(arquivo);
       cache = novos;
       cacheHash = createHash('sha256').update(JSON.stringify(novos)).digest('hex');
       cacheEm = Date.now();
+    })().finally(() => { carregamento = null; });
+  }
+  await carregamento;
+}
+
+export default async function handler(request) {
+  if (request.method !== 'GET') return new Response(JSON.stringify({error:'Método não permitido.'}), {status:405,headers:{'Content-Type':'application/json; charset=utf-8'}});
+  try {
+    let aviso = null;
+    try {
+      await carregarSeNecessario();
+    } catch (erro) {
+      if (!cache) throw erro;
+      aviso = 'Não foi possível consultar o Excel. Mostrando a última leitura válida.';
+      console.warn('HEMU: usando cache anterior', erro.message);
     }
-    return new Response(JSON.stringify({ok:true, origem:'Google Drive - Excel XLSX', sincronizadoEm:new Date(cacheEm).toISOString(), fonteHash:cacheHash, totais:{setores:cache.Controle_Setor.length,ferramentas:cache.Controle_Ferramentas.length,cronograma:cache.Cronograma_Mapa_CCF.length,sgq:cache.Planejamento_SGQ.length,politicas:cache.Politicas.length}, data:cache}), {
+    return new Response(JSON.stringify({ok:true, origem:'Google Drive - Excel XLSX', degradado:!!aviso, aviso, sincronizadoEm:new Date(cacheEm).toISOString(), fonteHash:cacheHash, totais:{setores:cache.Controle_Setor.length,ferramentas:cache.Controle_Ferramentas.length,cronograma:cache.Cronograma_Mapa_CCF.length,sgq:cache.Planejamento_SGQ.length,politicas:cache.Politicas.length}, data:cache}), {
       status:200,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}
     });
   } catch(e) {
