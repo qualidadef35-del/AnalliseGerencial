@@ -87,7 +87,7 @@ async function sincronizarPlanilha(mostrarAviso=false) {
     const versao = novaVersao ? ` • Versão ${novaVersao.slice(0, 10)}` : '';
     $('driveDot').className = 'drive-dot live';
     $('driveState').textContent = 'Planilha sincronizada';
-    $('driveDetail').textContent = `Excel consultado: ${ultimaLeituraConfirmada.toLocaleString('pt-BR')} • ${qtdSetores} setores${versao} • consulta a cada 10 segundos.`;
+    $('driveDetail').textContent = `Excel consultado: ${ultimaLeituraConfirmada.toLocaleString('pt-BR')} • ${qtdSetores} setores${versao} • consulta a cada 60 segundos.`;
     if (mostrarAviso) toast(houveMudanca ? 'Dados novos carregados da planilha.' : 'Consulta concluída; sem alterações nos dados da planilha.');
   } catch(error) {
     $('driveDot').className = 'drive-dot error';
@@ -103,5 +103,5 @@ async function sincronizarPlanilha(mostrarAviso=false) {
 }
 $('syncBtn').addEventListener('click',()=>sincronizarPlanilha(true));
 sincronizarPlanilha();
-setInterval(()=>{if(document.visibilityState==='visible')sincronizarPlanilha();},10_000);
+setInterval(()=>{if(document.visibilityState==='visible')sincronizarPlanilha();},60_000);
 </script></body></html>
