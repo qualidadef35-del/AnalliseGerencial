@@ -6,11 +6,13 @@
  * IMPORTANTE: a planilha de origem deve ter acesso de leitura por link.
  */
 import { inflateRawSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
 const DRIVE_FILE_ID = '1QQJNc1gmoy3UxI2t9IKv1bD92ud0dfow';
 const CACHE_MS = 10_000;
 let cache = null;
 let cacheEm = 0;
+let cacheHash = null;
 
 function entradaZip(arquivo, nome) {
   const b = Buffer.isBuffer(arquivo) ? arquivo : Buffer.from(arquivo);
@@ -188,15 +190,16 @@ export function parseWorkbook(buffer) {
 
 async function baixarExcel() {
   const id = process.env.DRIVE_FILE_ID || DRIVE_FILE_ID;
+  const versao = Date.now();
   const urls = process.env.EXCEL_DOWNLOAD_URL ? [process.env.EXCEL_DOWNLOAD_URL] : [
-    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t`,
-    `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}&confirm=t`,
-    `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=xlsx`
+    `https://drive.usercontent.google.com/download?id=${encodeURIComponent(id)}&export=download&confirm=t&_=${versao}`,
+    `https://drive.google.com/uc?export=download&id=${encodeURIComponent(id)}&confirm=t&_=${versao}`,
+    `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/export?format=xlsx&_=${versao}`
   ];
   const erros = [];
   for (const url of urls) {
     try {
-      const r = await fetch(url, {signal:AbortSignal.timeout(11000),redirect:'follow',headers:{'User-Agent':'Mozilla/5.0 HEMU-Qualidade-SGQ/1.0'}});
+      const r = await fetch(url, {signal:AbortSignal.timeout(15000),redirect:'follow',cache:'no-store',headers:{'User-Agent':'Mozilla/5.0 HEMU-Qualidade-SGQ/1.0','Cache-Control':'no-cache','Pragma':'no-cache'}});
       if (!r.ok) { erros.push(`Origem respondeu HTTP ${r.status}`); continue; }
       const bytes = Buffer.from(await r.arrayBuffer());
       if (bytes.length > 30_000_000) throw new Error('Arquivo excede o limite de segurança de 30 MB.');
@@ -215,10 +218,12 @@ export default async function handler(request) {
   try {
     if (!cache || Date.now() - cacheEm > CACHE_MS) {
       const arquivo = await baixarExcel();
-      cache = parseWorkbook(arquivo);
+      const novos = parseWorkbook(arquivo);
+      cache = novos;
+      cacheHash = createHash('sha256').update(JSON.stringify(novos)).digest('hex');
       cacheEm = Date.now();
     }
-    return new Response(JSON.stringify({ok:true, origem:'Google Drive - Excel XLSX', sincronizadoEm:new Date(cacheEm).toISOString(), data:cache}), {
+    return new Response(JSON.stringify({ok:true, origem:'Google Drive - Excel XLSX', sincronizadoEm:new Date(cacheEm).toISOString(), fonteHash:cacheHash, totais:{setores:cache.Controle_Setor.length,ferramentas:cache.Controle_Ferramentas.length,cronograma:cache.Cronograma_Mapa_CCF.length,sgq:cache.Planejamento_SGQ.length,politicas:cache.Politicas.length}, data:cache}), {
       status:200,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}
     });
   } catch(e) {
